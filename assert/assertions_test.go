@@ -1,6 +1,7 @@
 package assert
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -73,11 +74,11 @@ var (
 		[1]interface{}{1},
 		[]interface{}{},
 		struct{ x int }{1},
-		(*interface{})(&i),
-		(func())(func() {}),
+		(&i),
+		(func() {}),
 		interface{}(1),
 		map[interface{}]interface{}{},
-		(chan interface{})(make(chan interface{})),
+		(make(chan interface{})),
 		(<-chan interface{})(make(chan interface{})),
 		(chan<- interface{})(make(chan interface{})),
 	}
@@ -591,6 +592,18 @@ func TestContains(t *testing.T) {
 	}
 }
 
+func TestContainsFailMessage(t *testing.T) {
+
+	mockT := new(mockTestingT)
+
+	Contains(mockT, "Hello World", errors.New("Hello"))
+	expectedFail := "\"Hello World\" does not contain &errors.errorString{s:\"Hello\"}"
+	actualFail := mockT.errorString()
+	if !strings.Contains(actualFail, expectedFail) {
+		t.Errorf("Contains failure should include %q but was %q", expectedFail, actualFail)
+	}
+}
+
 func TestNotContains(t *testing.T) {
 
 	mockT := new(testing.T)
@@ -917,9 +930,6 @@ func TestNoError(t *testing.T) {
 	// returning an empty error interface
 	err = func() error {
 		var err *customError
-		if err != nil {
-			t.Fatal("err should be nil here")
-		}
 		return err
 	}()
 
@@ -954,9 +964,6 @@ func TestError(t *testing.T) {
 	// returning an empty error interface
 	err = func() error {
 		var err *customError
-		if err != nil {
-			t.Fatal("err should be nil here")
-		}
 		return err
 	}()
 
@@ -1025,7 +1032,6 @@ func TestEmpty(t *testing.T) {
 	type TString string
 	type TStruct struct {
 		x int
-		s []int
 	}
 
 	True(t, Empty(mockT, ""), "Empty string is empty")
@@ -1750,6 +1756,15 @@ func TestYAMLEq_ArraysOfDifferentOrder(t *testing.T) {
 	False(t, YAMLEq(mockT, `["foo", {"hello": "world", "nested": "hash"}]`, `[{ "hello": "world", "nested": "hash"}, "foo"]`))
 }
 
+type diffTestingStruct struct {
+	A string
+	B int
+}
+
+func (d *diffTestingStruct) String() string {
+	return d.A
+}
+
 func TestDiff(t *testing.T) {
 	expected := `
 
@@ -1827,6 +1842,42 @@ Diff:
 	actual = diff(
 		map[string]int{"one": 1, "two": 2, "three": 3, "four": 4},
 		map[string]int{"one": 1, "three": 3, "five": 5, "seven": 7},
+	)
+	Equal(t, expected, actual)
+
+	expected = `
+
+Diff:
+--- Expected
++++ Actual
+@@ -1,3 +1,3 @@
+ (*errors.errorString)({
+- s: (string) (len=19) "some expected error"
++ s: (string) (len=12) "actual error"
+ })
+`
+
+	actual = diff(
+		errors.New("some expected error"),
+		errors.New("actual error"),
+	)
+	Equal(t, expected, actual)
+
+	expected = `
+
+Diff:
+--- Expected
++++ Actual
+@@ -2,3 +2,3 @@
+  A: (string) (len=11) "some string",
+- B: (int) 10
++ B: (int) 15
+ }
+`
+
+	actual = diff(
+		diffTestingStruct{A: "some string", B: 10},
+		diffTestingStruct{A: "some string", B: 15},
 	)
 	Equal(t, expected, actual)
 }
@@ -2159,7 +2210,7 @@ func TestEventuallyTrue(t *testing.T) {
 	state := 0
 	condition := func() bool {
 		defer func() {
-			state = state + 1
+			state += 1
 		}()
 		return state == 2
 	}
@@ -2208,5 +2259,20 @@ func Test_validateEqualArgs(t *testing.T) {
 
 	if validateEqualArgs(nil, nil) != nil {
 		t.Error("nil functions are equal")
+	}
+}
+
+func Test_truncatingFormat(t *testing.T) {
+
+	original := strings.Repeat("a", bufio.MaxScanTokenSize-102)
+	result := truncatingFormat(original)
+	Equal(t, fmt.Sprintf("%#v", original), result, "string should not be truncated")
+
+	original = original + "x"
+	result = truncatingFormat(original)
+	NotEqual(t, fmt.Sprintf("%#v", original), result, "string should have been truncated.")
+
+	if !strings.HasSuffix(result, "<... truncated>") {
+		t.Error("truncated string should have <... truncated> suffix")
 	}
 }
