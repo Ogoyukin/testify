@@ -1,10 +1,13 @@
 package suite
 
 import (
+	"bytes"
 	"errors"
+	"flag"
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -148,14 +151,16 @@ type SuiteTester struct {
 	Suite
 
 	// Keep counts of how many times each method is run.
-	SetupSuiteRunCount    int
-	TearDownSuiteRunCount int
-	SetupTestRunCount     int
-	TearDownTestRunCount  int
-	TestOneRunCount       int
-	TestTwoRunCount       int
-	TestSubtestRunCount   int
-	NonTestMethodRunCount int
+	SetupSuiteRunCount      int
+	TearDownSuiteRunCount   int
+	SetupTestRunCount       int
+	TearDownTestRunCount    int
+	TestOneRunCount         int
+	TestTwoRunCount         int
+	TestSubtestRunCount     int
+	NonTestMethodRunCount   int
+	SetupSubTestRunCount    int
+	TearDownSubTestRunCount int
 
 	SuiteNameBefore []string
 	TestNameBefore  []string
@@ -252,6 +257,14 @@ func (suite *SuiteTester) TestSubtest() {
 	}
 }
 
+func (suite *SuiteTester) TearDownSubTest() {
+	suite.TearDownSubTestRunCount++
+}
+
+func (suite *SuiteTester) SetupSubTest() {
+	suite.SetupSubTestRunCount++
+}
+
 type SuiteSkipTester struct {
 	// Include our basic suite logic.
 	Suite
@@ -332,6 +345,9 @@ func TestRunSuite(t *testing.T) {
 	assert.Equal(t, suiteTester.TestOneRunCount, 1)
 	assert.Equal(t, suiteTester.TestTwoRunCount, 1)
 	assert.Equal(t, suiteTester.TestSubtestRunCount, 1)
+
+	assert.Equal(t, suiteTester.TearDownSubTestRunCount, 2)
+	assert.Equal(t, suiteTester.SetupSubTestRunCount, 2)
 
 	// Methods that don't match the test method identifier shouldn't
 	// have been run at all.
@@ -481,4 +497,123 @@ func (s *CallOrderSuite) Test_A() {
 
 func (s *CallOrderSuite) Test_B() {
 	s.call("Test B")
+}
+
+type suiteWithStats struct {
+	Suite
+	wasCalled bool
+	stats     *SuiteInformation
+}
+
+func (s *suiteWithStats) HandleStats(suiteName string, stats *SuiteInformation) {
+	s.wasCalled = true
+	s.stats = stats
+}
+
+func (s *suiteWithStats) TestSomething() {
+	s.Equal(1, 1)
+}
+
+func (s *suiteWithStats) TestPanic() {
+	panic("oops")
+}
+
+func TestSuiteWithStats(t *testing.T) {
+	suiteWithStats := new(suiteWithStats)
+
+	testing.RunTests(allTestsFilter, []testing.InternalTest{
+		{
+			Name: "WithStats",
+			F: func(t *testing.T) {
+				Run(t, suiteWithStats)
+			},
+		},
+	})
+
+	assert.True(t, suiteWithStats.wasCalled)
+	assert.NotZero(t, suiteWithStats.stats.Start)
+	assert.NotZero(t, suiteWithStats.stats.End)
+	assert.False(t, suiteWithStats.stats.Passed())
+
+	testStats := suiteWithStats.stats.TestStats
+
+	assert.NotZero(t, testStats["TestSomething"].Start)
+	assert.NotZero(t, testStats["TestSomething"].End)
+	assert.True(t, testStats["TestSomething"].Passed)
+
+	assert.NotZero(t, testStats["TestPanic"].Start)
+	assert.NotZero(t, testStats["TestPanic"].End)
+	assert.False(t, testStats["TestPanic"].Passed)
+}
+
+// FailfastSuite will test the behavior when running with the failfast flag
+// It logs calls in the callOrder slice which we then use to assert the correct calls were made
+type FailfastSuite struct {
+	Suite
+	callOrder []string
+}
+
+func (s *FailfastSuite) call(method string) {
+	s.callOrder = append(s.callOrder, method)
+}
+
+func TestFailfastSuite(t *testing.T) {
+	// This test suite is run twice. Once normally and once with the -failfast flag by TestFailfastSuiteFailFastOn
+	// If you need to debug it run this test directly with the failfast flag set on/off as you need
+	failFast := flag.Lookup("test.failfast").Value.(flag.Getter).Get().(bool)
+	s := new(FailfastSuite)
+	ok := testing.RunTests(
+		allTestsFilter,
+		[]testing.InternalTest{{
+			Name: "TestFailfastSuite",
+			F: func(t *testing.T) {
+				Run(t, s)
+			},
+		}},
+	)
+	assert.Equal(t, false, ok)
+	if failFast {
+		// Test A Fails and because we are running with failfast Test B never runs and we proceed straight to TearDownSuite
+		assert.Equal(t, "SetupSuite;SetupTest;Test A Fails;TearDownTest;TearDownSuite", strings.Join(s.callOrder, ";"))
+	} else {
+		// Test A Fails and because we are running without failfast we continue and run Test B and then proceed to TearDownSuite
+		assert.Equal(t, "SetupSuite;SetupTest;Test A Fails;TearDownTest;SetupTest;Test B Passes;TearDownTest;TearDownSuite", strings.Join(s.callOrder, ";"))
+	}
+}
+func TestFailfastSuiteFailFastOn(t *testing.T) {
+	// To test this with failfast on (and isolated from other intended test failures in our test suite) we launch it in its own process
+	cmd := exec.Command("go", "test", "-v", "-race", "-run", "TestFailfastSuite", "-failfast")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	t.Log("Running go test -v -race -run TestFailfastSuite -failfast")
+	err := cmd.Run()
+	t.Log(out.String())
+	if err != nil {
+		t.Log(err)
+		t.Fail()
+	}
+}
+func (s *FailfastSuite) SetupSuite() {
+	s.call("SetupSuite")
+}
+
+func (s *FailfastSuite) TearDownSuite() {
+	s.call("TearDownSuite")
+}
+func (s *FailfastSuite) SetupTest() {
+	s.call("SetupTest")
+}
+
+func (s *FailfastSuite) TearDownTest() {
+	s.call("TearDownTest")
+}
+
+func (s *FailfastSuite) Test_A_Fails() {
+	s.call("Test A Fails")
+	s.T().Error("Test A meant to fail")
+}
+
+func (s *FailfastSuite) Test_B_Passes() {
+	s.call("Test B Passes")
+	s.Require().True(true)
 }

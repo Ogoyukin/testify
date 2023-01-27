@@ -1,7 +1,9 @@
 Testify - Thou Shalt Write Tests
 ================================
 
-[![Build Status](https://travis-ci.org/stretchr/testify.svg)](https://travis-ci.org/stretchr/testify) [![Go Report Card](https://goreportcard.com/badge/github.com/stretchr/testify)](https://goreportcard.com/report/github.com/stretchr/testify) [![GoDoc](https://godoc.org/github.com/stretchr/testify?status.svg)](https://godoc.org/github.com/stretchr/testify)
+ℹ️ We are working on testify v2 and would love to hear what you'd like to see in it, have your say here: https://cutt.ly/testify
+
+[![Build Status](https://travis-ci.org/stretchr/testify.svg)](https://travis-ci.org/stretchr/testify) [![Go Report Card](https://goreportcard.com/badge/github.com/stretchr/testify)](https://goreportcard.com/report/github.com/stretchr/testify) [![PkgGoDev](https://pkg.go.dev/badge/github.com/stretchr/testify)](https://pkg.go.dev/github.com/stretchr/testify)
 
 Go code (golang) set of packages that provide many tools for testifying that your code will behave as you intend.
 
@@ -167,12 +169,12 @@ func TestSomething(t *testing.T) {
 
 }
 
-// TestSomethingElse is a second example of how to use our test object to
+// TestSomethingWithPlaceholder is a second example of how to use our test object to
 // make assertions about some target code we are testing.
 // This time using a placeholder. Placeholders might be used when the
 // data being passed in is normally dynamically generated and cannot be
 // predicted beforehand (eg. containing hashes that are time sensitive)
-func TestSomethingElse(t *testing.T) {
+func TestSomethingWithPlaceholder(t *testing.T) {
 
   // create an instance of our test object
   testObj := new(MyMockedObject)
@@ -187,6 +189,31 @@ func TestSomethingElse(t *testing.T) {
   testObj.AssertExpectations(t)
 
 
+}
+
+// TestSomethingElse2 is a third example that shows how you can use
+// the Unset method to cleanup handlers and then add new ones.
+func TestSomethingElse2(t *testing.T) {
+
+  // create an instance of our test object
+  testObj := new(MyMockedObject)
+
+  // setup expectations with a placeholder in the argument list
+  mockCall := testObj.On("DoSomething", mock.Anything).Return(true, nil)
+
+  // call the code we are testing
+  targetFuncThatDoesSomethingWithObj(testObj)
+
+  // assert that the expectations were met
+  testObj.AssertExpectations(t)
+
+  // remove the handler now so we can add another one that takes precedence
+  mockCall.Unset()
+
+  // return false now instead of true
+  testObj.On("DoSomething", mock.Anything).Return(false, nil)
+
+  testObj.AssertExpectations(t)
 }
 ```
 
@@ -321,7 +348,7 @@ To update Testify to the latest version, use `go get -u github.com/stretchr/test
 Supported go versions
 ==================
 
-We support the three major Go versions, which are 1.11, 1.12, and 1.13 at the moment.
+We currently support the most recent major Go versions from 1.13 onward.
 
 ------
 

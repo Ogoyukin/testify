@@ -154,6 +154,30 @@ func TestNotEqualWrapper(t *testing.T) {
 	}
 }
 
+func TestNotEqualValuesWrapper(t *testing.T) {
+
+	assert := New(new(testing.T))
+
+	if !assert.NotEqualValues("Hello World", "Hello World!") {
+		t.Error("NotEqualValues should return true")
+	}
+	if !assert.NotEqualValues(123, 1234) {
+		t.Error("NotEqualValues should return true")
+	}
+	if !assert.NotEqualValues(123.5, 123.55) {
+		t.Error("NotEqualValues should return true")
+	}
+	if !assert.NotEqualValues([]byte("Hello World"), []byte("Hello World!")) {
+		t.Error("NotEqualValues should return true")
+	}
+	if !assert.NotEqualValues(nil, new(AssertionTesterConformingObject)) {
+		t.Error("NotEqualValues should return true")
+	}
+	if assert.NotEqualValues(10, uint(10)) {
+		t.Error("NotEqualValues should return false")
+	}
+}
+
 func TestContainsWrapper(t *testing.T) {
 
 	assert := New(new(testing.T))
@@ -289,6 +313,25 @@ func TestErrorWrapper(t *testing.T) {
 
 	assert.True(mockAssert.Error(err), "Error with error should return True")
 
+}
+
+func TestErrorContainsWrapper(t *testing.T) {
+	assert := New(t)
+	mockAssert := New(new(testing.T))
+
+	// start with a nil error
+	var err error
+	assert.False(mockAssert.ErrorContains(err, ""),
+		"ErrorContains should return false for nil arg")
+
+	// now set an error
+	err = errors.New("some error: another error")
+	assert.False(mockAssert.ErrorContains(err, "different error"),
+		"ErrorContains should return false for different error string")
+	assert.True(mockAssert.ErrorContains(err, "some error"),
+		"ErrorContains should return true")
+	assert.True(mockAssert.ErrorContains(err, "another error"),
+		"ErrorContains should return true")
 }
 
 func TestEqualErrorWrapper(t *testing.T) {

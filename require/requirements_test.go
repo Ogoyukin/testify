@@ -208,6 +208,17 @@ func TestError(t *testing.T) {
 	}
 }
 
+func TestErrorContains(t *testing.T) {
+
+	ErrorContains(t, errors.New("some error: another error"), "some error")
+
+	mockT := new(MockT)
+	ErrorContains(mockT, errors.New("some error"), "different error")
+	if !mockT.Failed {
+		t.Error("Check should fail")
+	}
+}
+
 func TestEqualError(t *testing.T) {
 
 	EqualError(t, errors.New("some error"), "some error")
@@ -521,6 +532,7 @@ func TestComparisonAssertionFunc(t *testing.T) {
 		{"equalValues", t, t, EqualValues},
 		{"exactly", t, t, Exactly},
 		{"notEqual", t, nil, NotEqual},
+		{"NotEqualValues", t, nil, NotEqualValues},
 		{"notContains", []int{1, 2, 3}, 4, NotContains},
 		{"subset", []int{1, 2, 3, 4}, []int{2, 3}, Subset},
 		{"notSubset", []int{1, 2, 3, 4}, []int{0, 3}, NotSubset},

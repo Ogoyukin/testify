@@ -1,28 +1,57 @@
 package assert
 
 import (
+	"bytes"
+	"fmt"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
 func TestCompare(t *testing.T) {
+	type customInt int
+	type customInt8 int8
+	type customInt16 int16
+	type customInt32 int32
+	type customInt64 int64
+	type customUInt uint
+	type customUInt8 uint8
+	type customUInt16 uint16
+	type customUInt32 uint32
+	type customUInt64 uint64
+	type customFloat32 float32
+	type customFloat64 float64
+	type customString string
 	for _, currCase := range []struct {
 		less    interface{}
 		greater interface{}
 		cType   string
 	}{
+		{less: customString("a"), greater: customString("b"), cType: "string"},
 		{less: "a", greater: "b", cType: "string"},
+		{less: customInt(1), greater: customInt(2), cType: "int"},
 		{less: int(1), greater: int(2), cType: "int"},
+		{less: customInt8(1), greater: customInt8(2), cType: "int8"},
 		{less: int8(1), greater: int8(2), cType: "int8"},
+		{less: customInt16(1), greater: customInt16(2), cType: "int16"},
 		{less: int16(1), greater: int16(2), cType: "int16"},
+		{less: customInt32(1), greater: customInt32(2), cType: "int32"},
 		{less: int32(1), greater: int32(2), cType: "int32"},
+		{less: customInt64(1), greater: customInt64(2), cType: "int64"},
 		{less: int64(1), greater: int64(2), cType: "int64"},
+		{less: customUInt(1), greater: customUInt(2), cType: "uint"},
 		{less: uint8(1), greater: uint8(2), cType: "uint8"},
+		{less: customUInt8(1), greater: customUInt8(2), cType: "uint8"},
 		{less: uint16(1), greater: uint16(2), cType: "uint16"},
+		{less: customUInt16(1), greater: customUInt16(2), cType: "uint16"},
 		{less: uint32(1), greater: uint32(2), cType: "uint32"},
+		{less: customUInt32(1), greater: customUInt32(2), cType: "uint32"},
 		{less: uint64(1), greater: uint64(2), cType: "uint64"},
-		{less: float32(1), greater: float32(2), cType: "float32"},
-		{less: float64(1), greater: float64(2), cType: "float64"},
+		{less: customUInt64(1), greater: customUInt64(2), cType: "uint64"},
+		{less: float32(1.23), greater: float32(2.34), cType: "float32"},
+		{less: customFloat32(1.23), greater: customFloat32(2.23), cType: "float32"},
+		{less: float64(1.23), greater: float64(2.34), cType: "float64"},
+		{less: customFloat64(1.23), greater: customFloat64(2.34), cType: "float64"},
 	} {
 		resLess, isComparable := compare(currCase.less, currCase.greater, reflect.ValueOf(currCase.less).Kind())
 		if !isComparable {
@@ -30,7 +59,8 @@ func TestCompare(t *testing.T) {
 		}
 
 		if resLess != compareLess {
-			t.Errorf("object less should be less than greater for type " + currCase.cType)
+			t.Errorf("object less (%v) should be less than greater (%v) for type "+currCase.cType,
+				currCase.less, currCase.greater)
 		}
 
 		resGreater, isComparable := compare(currCase.greater, currCase.less, reflect.ValueOf(currCase.less).Kind())
@@ -53,6 +83,38 @@ func TestCompare(t *testing.T) {
 	}
 }
 
+type outputT struct {
+	buf     *bytes.Buffer
+	helpers map[string]struct{}
+}
+
+// Implements TestingT
+func (t *outputT) Errorf(format string, args ...interface{}) {
+	s := fmt.Sprintf(format, args...)
+	t.buf.WriteString(s)
+}
+
+func (t *outputT) Helper() {
+	if t.helpers == nil {
+		t.helpers = make(map[string]struct{})
+	}
+	t.helpers[callerName(1)] = struct{}{}
+}
+
+// callerName gives the function name (qualified with a package path)
+// for the caller after skip frames (where 0 means the current function).
+func callerName(skip int) string {
+	// Make room for the skip PC.
+	var pc [1]uintptr
+	n := runtime.Callers(skip+2, pc[:]) // skip + runtime.Callers + callerName
+	if n == 0 {
+		panic("testing: zero callers found")
+	}
+	frames := runtime.CallersFrames(pc[:n])
+	frame, _ := frames.Next()
+	return frame.Function
+}
+
 func TestGreater(t *testing.T) {
 	mockT := new(testing.T)
 
@@ -67,21 +129,71 @@ func TestGreater(t *testing.T) {
 	if Greater(mockT, 1, 2) {
 		t.Error("Greater should return false")
 	}
+
+	// Check error report
+	for _, currCase := range []struct {
+		less    interface{}
+		greater interface{}
+		msg     string
+	}{
+		{less: "a", greater: "b", msg: `"a" is not greater than "b"`},
+		{less: int(1), greater: int(2), msg: `"1" is not greater than "2"`},
+		{less: int8(1), greater: int8(2), msg: `"1" is not greater than "2"`},
+		{less: int16(1), greater: int16(2), msg: `"1" is not greater than "2"`},
+		{less: int32(1), greater: int32(2), msg: `"1" is not greater than "2"`},
+		{less: int64(1), greater: int64(2), msg: `"1" is not greater than "2"`},
+		{less: uint8(1), greater: uint8(2), msg: `"1" is not greater than "2"`},
+		{less: uint16(1), greater: uint16(2), msg: `"1" is not greater than "2"`},
+		{less: uint32(1), greater: uint32(2), msg: `"1" is not greater than "2"`},
+		{less: uint64(1), greater: uint64(2), msg: `"1" is not greater than "2"`},
+		{less: float32(1.23), greater: float32(2.34), msg: `"1.23" is not greater than "2.34"`},
+		{less: float64(1.23), greater: float64(2.34), msg: `"1.23" is not greater than "2.34"`},
+	} {
+		out := &outputT{buf: bytes.NewBuffer(nil)}
+		False(t, Greater(out, currCase.less, currCase.greater))
+		Contains(t, out.buf.String(), currCase.msg)
+		Contains(t, out.helpers, "github.com/stretchr/testify/assert.Greater")
+	}
 }
 
 func TestGreaterOrEqual(t *testing.T) {
 	mockT := new(testing.T)
 
 	if !GreaterOrEqual(mockT, 2, 1) {
-		t.Error("Greater should return true")
+		t.Error("GreaterOrEqual should return true")
 	}
 
 	if !GreaterOrEqual(mockT, 1, 1) {
-		t.Error("Greater should return true")
+		t.Error("GreaterOrEqual should return true")
 	}
 
 	if GreaterOrEqual(mockT, 1, 2) {
-		t.Error("Greater should return false")
+		t.Error("GreaterOrEqual should return false")
+	}
+
+	// Check error report
+	for _, currCase := range []struct {
+		less    interface{}
+		greater interface{}
+		msg     string
+	}{
+		{less: "a", greater: "b", msg: `"a" is not greater than or equal to "b"`},
+		{less: int(1), greater: int(2), msg: `"1" is not greater than or equal to "2"`},
+		{less: int8(1), greater: int8(2), msg: `"1" is not greater than or equal to "2"`},
+		{less: int16(1), greater: int16(2), msg: `"1" is not greater than or equal to "2"`},
+		{less: int32(1), greater: int32(2), msg: `"1" is not greater than or equal to "2"`},
+		{less: int64(1), greater: int64(2), msg: `"1" is not greater than or equal to "2"`},
+		{less: uint8(1), greater: uint8(2), msg: `"1" is not greater than or equal to "2"`},
+		{less: uint16(1), greater: uint16(2), msg: `"1" is not greater than or equal to "2"`},
+		{less: uint32(1), greater: uint32(2), msg: `"1" is not greater than or equal to "2"`},
+		{less: uint64(1), greater: uint64(2), msg: `"1" is not greater than or equal to "2"`},
+		{less: float32(1.23), greater: float32(2.34), msg: `"1.23" is not greater than or equal to "2.34"`},
+		{less: float64(1.23), greater: float64(2.34), msg: `"1.23" is not greater than or equal to "2.34"`},
+	} {
+		out := &outputT{buf: bytes.NewBuffer(nil)}
+		False(t, GreaterOrEqual(out, currCase.less, currCase.greater))
+		Contains(t, out.buf.String(), currCase.msg)
+		Contains(t, out.helpers, "github.com/stretchr/testify/assert.GreaterOrEqual")
 	}
 }
 
@@ -99,21 +211,149 @@ func TestLess(t *testing.T) {
 	if Less(mockT, 2, 1) {
 		t.Error("Less should return false")
 	}
+
+	// Check error report
+	for _, currCase := range []struct {
+		less    interface{}
+		greater interface{}
+		msg     string
+	}{
+		{less: "a", greater: "b", msg: `"b" is not less than "a"`},
+		{less: int(1), greater: int(2), msg: `"2" is not less than "1"`},
+		{less: int8(1), greater: int8(2), msg: `"2" is not less than "1"`},
+		{less: int16(1), greater: int16(2), msg: `"2" is not less than "1"`},
+		{less: int32(1), greater: int32(2), msg: `"2" is not less than "1"`},
+		{less: int64(1), greater: int64(2), msg: `"2" is not less than "1"`},
+		{less: uint8(1), greater: uint8(2), msg: `"2" is not less than "1"`},
+		{less: uint16(1), greater: uint16(2), msg: `"2" is not less than "1"`},
+		{less: uint32(1), greater: uint32(2), msg: `"2" is not less than "1"`},
+		{less: uint64(1), greater: uint64(2), msg: `"2" is not less than "1"`},
+		{less: float32(1.23), greater: float32(2.34), msg: `"2.34" is not less than "1.23"`},
+		{less: float64(1.23), greater: float64(2.34), msg: `"2.34" is not less than "1.23"`},
+	} {
+		out := &outputT{buf: bytes.NewBuffer(nil)}
+		False(t, Less(out, currCase.greater, currCase.less))
+		Contains(t, out.buf.String(), currCase.msg)
+		Contains(t, out.helpers, "github.com/stretchr/testify/assert.Less")
+	}
 }
 
 func TestLessOrEqual(t *testing.T) {
 	mockT := new(testing.T)
 
 	if !LessOrEqual(mockT, 1, 2) {
-		t.Error("Greater should return true")
+		t.Error("LessOrEqual should return true")
 	}
 
 	if !LessOrEqual(mockT, 1, 1) {
-		t.Error("Greater should return true")
+		t.Error("LessOrEqual should return true")
 	}
 
 	if LessOrEqual(mockT, 2, 1) {
-		t.Error("Greater should return false")
+		t.Error("LessOrEqual should return false")
+	}
+
+	// Check error report
+	for _, currCase := range []struct {
+		less    interface{}
+		greater interface{}
+		msg     string
+	}{
+		{less: "a", greater: "b", msg: `"b" is not less than or equal to "a"`},
+		{less: int(1), greater: int(2), msg: `"2" is not less than or equal to "1"`},
+		{less: int8(1), greater: int8(2), msg: `"2" is not less than or equal to "1"`},
+		{less: int16(1), greater: int16(2), msg: `"2" is not less than or equal to "1"`},
+		{less: int32(1), greater: int32(2), msg: `"2" is not less than or equal to "1"`},
+		{less: int64(1), greater: int64(2), msg: `"2" is not less than or equal to "1"`},
+		{less: uint8(1), greater: uint8(2), msg: `"2" is not less than or equal to "1"`},
+		{less: uint16(1), greater: uint16(2), msg: `"2" is not less than or equal to "1"`},
+		{less: uint32(1), greater: uint32(2), msg: `"2" is not less than or equal to "1"`},
+		{less: uint64(1), greater: uint64(2), msg: `"2" is not less than or equal to "1"`},
+		{less: float32(1.23), greater: float32(2.34), msg: `"2.34" is not less than or equal to "1.23"`},
+		{less: float64(1.23), greater: float64(2.34), msg: `"2.34" is not less than or equal to "1.23"`},
+	} {
+		out := &outputT{buf: bytes.NewBuffer(nil)}
+		False(t, LessOrEqual(out, currCase.greater, currCase.less))
+		Contains(t, out.buf.String(), currCase.msg)
+		Contains(t, out.helpers, "github.com/stretchr/testify/assert.LessOrEqual")
+	}
+}
+
+func TestPositive(t *testing.T) {
+	mockT := new(testing.T)
+
+	if !Positive(mockT, 1) {
+		t.Error("Positive should return true")
+	}
+
+	if !Positive(mockT, 1.23) {
+		t.Error("Positive should return true")
+	}
+
+	if Positive(mockT, -1) {
+		t.Error("Positive should return false")
+	}
+
+	if Positive(mockT, -1.23) {
+		t.Error("Positive should return false")
+	}
+
+	// Check error report
+	for _, currCase := range []struct {
+		e   interface{}
+		msg string
+	}{
+		{e: int(-1), msg: `"-1" is not positive`},
+		{e: int8(-1), msg: `"-1" is not positive`},
+		{e: int16(-1), msg: `"-1" is not positive`},
+		{e: int32(-1), msg: `"-1" is not positive`},
+		{e: int64(-1), msg: `"-1" is not positive`},
+		{e: float32(-1.23), msg: `"-1.23" is not positive`},
+		{e: float64(-1.23), msg: `"-1.23" is not positive`},
+	} {
+		out := &outputT{buf: bytes.NewBuffer(nil)}
+		False(t, Positive(out, currCase.e))
+		Contains(t, out.buf.String(), currCase.msg)
+		Contains(t, out.helpers, "github.com/stretchr/testify/assert.Positive")
+	}
+}
+
+func TestNegative(t *testing.T) {
+	mockT := new(testing.T)
+
+	if !Negative(mockT, -1) {
+		t.Error("Negative should return true")
+	}
+
+	if !Negative(mockT, -1.23) {
+		t.Error("Negative should return true")
+	}
+
+	if Negative(mockT, 1) {
+		t.Error("Negative should return false")
+	}
+
+	if Negative(mockT, 1.23) {
+		t.Error("Negative should return false")
+	}
+
+	// Check error report
+	for _, currCase := range []struct {
+		e   interface{}
+		msg string
+	}{
+		{e: int(1), msg: `"1" is not negative`},
+		{e: int8(1), msg: `"1" is not negative`},
+		{e: int16(1), msg: `"1" is not negative`},
+		{e: int32(1), msg: `"1" is not negative`},
+		{e: int64(1), msg: `"1" is not negative`},
+		{e: float32(1.23), msg: `"1.23" is not negative`},
+		{e: float64(1.23), msg: `"1.23" is not negative`},
+	} {
+		out := &outputT{buf: bytes.NewBuffer(nil)}
+		False(t, Negative(out, currCase.e))
+		Contains(t, out.buf.String(), currCase.msg)
+		Contains(t, out.helpers, "github.com/stretchr/testify/assert.Negative")
 	}
 }
 
@@ -147,7 +387,7 @@ func Test_compareTwoValuesNotComparableValues(t *testing.T) {
 	}{
 		{v1: CompareStruct{}, v2: CompareStruct{}},
 		{v1: map[string]int{}, v2: map[string]int{}},
-		{v1: make([]int, 5, 5), v2: make([]int, 5, 5)},
+		{v1: make([]int, 5), v2: make([]int, 5)},
 	} {
 		compareResult := compareTwoValues(mockT, currCase.v1, currCase.v2, []CompareType{compareLess, compareEqual, compareGreater}, "testFailMessage")
 		False(t, compareResult)
@@ -187,5 +427,23 @@ func Test_containsValue(t *testing.T) {
 	} {
 		compareResult := containsValue(currCase.values, currCase.value)
 		Equal(t, currCase.result, compareResult)
+	}
+}
+
+func TestComparingMsgAndArgsForwarding(t *testing.T) {
+	msgAndArgs := []interface{}{"format %s %x", "this", 0xc001}
+	expectedOutput := "format this c001\n"
+	funcs := []func(t TestingT){
+		func(t TestingT) { Greater(t, 1, 2, msgAndArgs...) },
+		func(t TestingT) { GreaterOrEqual(t, 1, 2, msgAndArgs...) },
+		func(t TestingT) { Less(t, 2, 1, msgAndArgs...) },
+		func(t TestingT) { LessOrEqual(t, 2, 1, msgAndArgs...) },
+		func(t TestingT) { Positive(t, 0, msgAndArgs...) },
+		func(t TestingT) { Negative(t, 0, msgAndArgs...) },
+	}
+	for _, f := range funcs {
+		out := &outputT{buf: bytes.NewBuffer(nil)}
+		f(out)
+		Contains(t, out.buf.String(), expectedOutput)
 	}
 }
