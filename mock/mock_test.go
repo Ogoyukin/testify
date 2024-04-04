@@ -32,6 +32,29 @@ func (i *TestExampleImplementation) TheExampleMethod(a, b, c int) (int, error) {
 	return args.Int(0), errors.New("Whoops")
 }
 
+type options struct {
+	num int
+	str string
+}
+
+type OptionFn func(*options)
+
+func OpNum(n int) OptionFn {
+	return func(o *options) {
+		o.num = n
+	}
+}
+
+func OpStr(s string) OptionFn {
+	return func(o *options) {
+		o.str = s
+	}
+}
+func (i *TestExampleImplementation) TheExampleMethodFunctionalOptions(x string, opts ...OptionFn) error {
+	args := i.Called(x, opts)
+	return args.Error(0)
+}
+
 //go:noinline
 func (i *TestExampleImplementation) TheExampleMethod2(yesorno bool) {
 	i.Called(yesorno)
@@ -113,7 +136,7 @@ func (m *MockTestingT) Errorf(string, ...interface{}) {
 // the execution stops.
 // When expecting this method, the call that invokes it should use the following code:
 //
-//     assert.PanicsWithValue(t, mockTestingTFailNowCalled, func() {...})
+//	assert.PanicsWithValue(t, mockTestingTFailNowCalled, func() {...})
 func (m *MockTestingT) FailNow() {
 	m.failNowCount++
 
@@ -1415,6 +1438,40 @@ func Test_Mock_AssertExpectationsCustomType(t *testing.T) {
 
 }
 
+func Test_Mock_AssertExpectationsFunctionalOptionsType(t *testing.T) {
+
+	var mockedService = new(TestExampleImplementation)
+
+	mockedService.On("TheExampleMethodFunctionalOptions", "test", FunctionalOptions(OpNum(1), OpStr("foo"))).Return(nil).Once()
+
+	tt := new(testing.T)
+	assert.False(t, mockedService.AssertExpectations(tt))
+
+	// make the call now
+	mockedService.TheExampleMethodFunctionalOptions("test", OpNum(1), OpStr("foo"))
+
+	// now assert expectations
+	assert.True(t, mockedService.AssertExpectations(tt))
+
+}
+
+func Test_Mock_AssertExpectationsFunctionalOptionsType_Empty(t *testing.T) {
+
+	var mockedService = new(TestExampleImplementation)
+
+	mockedService.On("TheExampleMethodFunctionalOptions", "test", FunctionalOptions()).Return(nil).Once()
+
+	tt := new(testing.T)
+	assert.False(t, mockedService.AssertExpectations(tt))
+
+	// make the call now
+	mockedService.TheExampleMethodFunctionalOptions("test")
+
+	// now assert expectations
+	assert.True(t, mockedService.AssertExpectations(tt))
+
+}
+
 func Test_Mock_AssertExpectations_With_Repeatability(t *testing.T) {
 
 	var mockedService = new(TestExampleImplementation)
@@ -1434,6 +1491,16 @@ func Test_Mock_AssertExpectations_With_Repeatability(t *testing.T) {
 	// now assert expectations
 	assert.True(t, mockedService.AssertExpectations(tt))
 
+}
+
+func Test_Mock_AssertExpectations_Skipped_Test(t *testing.T) {
+
+	var mockedService = new(TestExampleImplementation)
+
+	mockedService.On("Test_Mock_AssertExpectations_Skipped_Test", 1, 2, 3).Return(5, 6, 7)
+	defer mockedService.AssertExpectations(t)
+
+	t.Skip("skipping test to ensure AssertExpectations does not fail")
 }
 
 func Test_Mock_TwoCallsWithDifferentArguments(t *testing.T) {
@@ -1559,17 +1626,14 @@ func Test_Mock_IsMethodCallable(t *testing.T) {
 
 func TestIsArgsEqual(t *testing.T) {
 	var expected = Arguments{5, 3, 4, 6, 7, 2}
-	var args = make([]interface{}, 5)
-	for i := 1; i < len(expected); i++ {
-		args[i-1] = expected[i]
-	}
+
+	// Copy elements 1 to 5
+	args := append(([]interface{})(nil), expected[1:]...)
 	args[2] = expected[1]
 	assert.False(t, isArgsEqual(expected, args))
 
-	var arr = make([]interface{}, 6)
-	for i := 0; i < len(expected); i++ {
-		arr[i] = expected[i]
-	}
+	// Clone
+	arr := append(([]interface{})(nil), expected...)
 	assert.True(t, isArgsEqual(expected, arr))
 }
 
@@ -1599,7 +1663,7 @@ func Test_Mock_AssertOptional(t *testing.T) {
 }
 
 /*
-	Arguments helper methods
+Arguments helper methods
 */
 func Test_Arguments_Get(t *testing.T) {
 
@@ -1905,7 +1969,7 @@ func TestAfterTotalWaitTimeWhileExecution(t *testing.T) {
 
 	end := time.Now()
 	elapsedTime := end.Sub(start)
-	assert.True(t, elapsedTime > waitMs, fmt.Sprintf("Total elapsed time:%v should be atleast greater than %v", elapsedTime, waitMs))
+	assert.True(t, elapsedTime > waitMs, fmt.Sprintf("Total elapsed time:%v should be at least greater than %v", elapsedTime, waitMs))
 	assert.Equal(t, total, len(results))
 	for i := range results {
 		assert.Equal(t, fmt.Sprintf("Time%d", i), results[i], "Return value of method should be same")
